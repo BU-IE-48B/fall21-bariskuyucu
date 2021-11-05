@@ -1,0 +1,435 @@
+---
+title: "hw1"
+author: "Ekrem Barış Kuyucu"
+date: "01 11 2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+## Introduction
+
+In this project we are asked to use a data which has x, y and z coordinates and use these values to make gesture recognition. We will find the acceleration values and by using some data manipulation, we want to calculate speed and location values. These values will help us find the locations of all points in the classes, so we will be able to create our figure.
+For the first part of this project, we will use 3D scatter plot for our visualization. By using the location values for all axes, we will try to create a gesture shape and try to make our figures similar to the desired shapes.
+For the second part of this project, we will use two alternative representation methods to help us understand the results. These methods will be individual model representation and class based representation.
+
+```{r}
+
+library(data.table,quietly = TRUE,warn.conflicts = FALSE)
+library(ggplot2,quietly = TRUE,warn.conflicts = FALSE)
+library(repr,quietly = TRUE,warn.conflicts = FALSE)
+library(rpart,quietly = TRUE,warn.conflicts = FALSE)
+library(rattle,quietly = TRUE,warn.conflicts = FALSE)
+library(TSrepr,quietly = TRUE,warn.conflicts = FALSE)
+library(zoo,quietly = TRUE,warn.conflicts = FALSE)
+library(plotly,quietly = TRUE,warn.conflicts = FALSE)
+library(knitr,quietly = TRUE,warn.conflicts = FALSE)
+
+
+```
+
+We read our data with fread function.
+
+```{r}
+
+x<-fread("D:/Boğaziçi/İe48b/hw1/uWaveGestureLibrary_X_TRAIN")
+y<-fread("D:/Boğaziçi/İe48b/hw1/uWaveGestureLibrary_Y_TRAIN")
+z<-fread("D:/Boğaziçi/İe48b/hw1/uWaveGestureLibrary_Z_TRAIN")
+
+
+```
+
+## Data manipulation
+
+We need to change the names of our columns in order to understand what they represent more easily. So we name our first column as class for x, y and z axes.
+
+```{r}
+
+setnames(x,'V1','class')
+train_x=x[order(class)]
+train_x[,class:=as.character(class)]
+train_x[,instances:=1:.N]
+head(train_x[,c(1:5)])
+
+setnames(y,'V1','class')
+train_y=y[order(class)]
+train_y[,class:=as.character(class)]
+train_y[,instances:=1:.N]
+head(train_y[,c(1:5)])
+
+setnames(z,'V1','class')
+train_z=z[order(class)]
+train_z[,class:=as.character(class)]
+train_z[,instances:=1:.N]
+head(train_z[,c(1:5)])
+
+```
+
+We melt our data and add time column. We create instances column to find the number of occurence of the values. We call the melted value acceleration.
+
+```{r}
+
+long_x=melt(train_x,id.vars=c('instances','class'),value='acc_x')
+long_x[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_x=long_x[,list(instances,class,time,acc_x)]
+long_x=long_x[order(instances,time)]
+head(long_x)
+
+long_y=melt(train_y,id.vars=c('instances','class'),value='acc_x')
+long_y[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_y=long_y[,list(instances,class,time,acc_x)]
+long_y=long_y[order(instances,time)]
+head(long_y)
+
+long_z=melt(train_z,id.vars=c('instances','class'),value='acc_z')
+long_z[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_z=long_z[,list(instances,class,time,acc_z)]
+long_z=long_z[order(instances,time)]
+head(long_z)
+
+
+
+```
+
+We find speed and location values by using cumulative sum approach. By using acceleration values we calculate speed values and by using speed values we calculate location values.
+
+```{r}
+merged=long_x
+merged[,speed_x:=cumsum(acc_x),by=instances]
+merged[,location_x:=cumsum(speed_x),by=instances]
+
+merged[,acc_y:=long_y[,4]]
+merged[,speed_y:=cumsum(acc_y),by=instances]
+merged[,location_y:=cumsum(speed_y),by=instances]
+
+merged[,acc_z:=long_z[,4]]
+merged[,speed_z:=cumsum(acc_z),by=instances]
+merged[,location_z:=cumsum(speed_z),by=instances]
+
+head(merged)
+
+
+```
+
+## Part 1 Gesture Recognition
+
+We calculated our location values above. By using these values, we will create x,y and z variables. By using plot_ly function we will draw the graphs of our 3D models for all 8 classes.
+
+# Class 1 Instance 111
+
+```{r}
+
+data1=merged[instances == 111 & class == 1]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+```
+
+In gesture vocabulary figure in our pdf, first image has a sharp corner. In our plot we don't have the sharp cornet but the shape is similar.
+
+# Class 2 Instance 222
+
+```{r}
+
+data1=merged[instances == 222 & class == 2]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+
+```
+
+In gesture vocabulary figure in our pdf, second image has sharp corners and it looks like it returns to its start point. In our plot the image is following the same pattern but the end did not return to where it started. 
+
+# Class 3 Instance 333
+
+```{r}
+
+data1=merged[instances == 333 & class == 3]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+
+```
+
+In gesture vocabulary figure in our pdf, third image is a straight line. In our plot the image is like a straight line but at the end of it, it has a litte curve.
+
+# Class 4 Instance 444
+
+```{r}
+
+data1=merged[instances == 444 & class == 4]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+
+```
+
+In gesture vocabulary figure in our pdf, fourth image is a straight line. In our plot the image is like a straight line but at the beginning but later, it becomes a curve.
+
+# Class 5 Instance 555
+
+```{r}
+
+data1=merged[instances == 555 & class == 5]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+
+```
+
+
+In gesture vocabulary figure in our pdf, fifth image is a straight line. In our plot the image is like a straight line but at the beginning but later, it becomes a curve.
+
+# Class 6 Instance 666
+
+```{r}
+
+data1=merged[instances == 666 & class == 6]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+
+
+```
+
+In gesture vocabulary figure in our pdf, sixth image is a straight line. In our plot the image is like a straight line but at the beginning but later, it has some oscillations in the end.
+
+# Class 7 Instance 777
+
+```{r}
+
+data1=merged[instances == 777 & class == 7]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+
+
+```
+
+
+In gesture vocabulary figure in our pdf, seventh image is a curve and it looks like it returns to its start point. In our plot the image is following the same pattern but the end did not return to where it started.
+
+# Class 8 Instance 888
+
+```{r}
+
+data1=merged[instances == 888 & class == 8]
+x=data1$location_x 
+y=data1$location_y 
+z=data1$location_z 
+
+
+data1$color <- as.factor(data1$color)
+
+fig <- plot_ly(data1, x = ~x, y = ~y, z = ~z, type = 'scatter3d', mode = 'marker',opacity = 1, color = (1:315))
+
+fig
+
+
+
+```
+
+In gesture vocabulary figure in our pdf, eighth image is a curve and it looks like it returns to its start point. It is like the seventh image but the way is reversed. In our plot the image is following the same pattern but the end did not return to where it started.
+
+For different values of instances and class values, we have different location values. Our figures are mostly similar to our gestures. There are some small differences which may caused by the selected instances. Different instances in the same class may have small effects on our figures.
+
+## Part 2 Alternatives
+
+## Individual model representation
+
+We will use autoregressive approach in this method. We will use lag2. We will use AR2 model as a function to get the coefficients. We will do this for x, y and z axes. Then we will see the lag values we obtained. Here we have some NA values while calculating lagged values.
+
+```{r}
+
+im_merged=copy(merged)
+im_merged=im_merged[order(instances,time)]
+im_merged[,lag1_x:=shift(location_x,1),by=list(instances)]
+im_merged[,lag2_x:=shift(location_x,2),by=list(instances)]
+
+im_merged[,lag1_y:=shift(location_y,1),by=list(instances)]
+im_merged[,lag2_y:=shift(location_y,2),by=list(instances)]
+
+im_merged[,lag1_z:=shift(location_z,1),by=list(instances)]
+im_merged[,lag2_z:=shift(location_z,2),by=list(instances)]
+
+
+head(im_merged[,c(13:18)])
+
+series_id=unique(im_merged$instances)
+
+fit_ar2_x1=function(dat){
+    fit_x1=lm(location_x~lag1_x+lag2_x,dat)
+    return(data.frame(t(coef(fit_x1))))
+}
+
+
+fit_ar2_y1=function(dat){
+    fit_y1=lm(location_y~lag1_y+lag2_y,dat)
+    return(data.frame(t(coef(fit_y1))))
+}
+
+
+fit_ar2_z1=function(dat){
+    fit_z1=lm(location_z~lag1_z+lag2_z,dat)
+    return(data.frame(t(coef(fit_z1))))
+}
+fitted_coef_x1=lapply(series_id,function(x) fit_ar2_x1(im_merged[instances==x]))
+fitted_coef_y1=lapply(series_id,function(y) fit_ar2_y1(im_merged[instances==y]))
+fitted_coef_z1=lapply(series_id,function(z) fit_ar2_z1(im_merged[instances==z]))
+
+coef_dt_x1=rbindlist(fitted_coef_x1)
+coef_dt_y1=rbindlist(fitted_coef_y1)
+coef_dt_z1=rbindlist(fitted_coef_z1)
+                   
+head(coef_dt_x1)
+head(coef_dt_y1)
+head(coef_dt_z1)
+                   
+
+```
+
+We need to organize our new created data by using instances column in order to have a better organized data. 
+
+```{r}
+
+coef_dt_x1[,instances:=series_id]
+coef_dt_y1[,instances:=series_id]
+coef_dt_z1[,instances:=series_id]
+
+coef_dt=x1=merge(coef_dt_x1,train_x[,list(instances,class)],by='instances')
+coef_dt=y1=merge(coef_dt_y1,train_y[,list(instances,class)],by='instances')
+coef_dt=z1=merge(coef_dt_z1,train_z[,list(instances,class)],by='instances')
+head(coef_dt_x1)
+head(coef_dt_y1)
+head(coef_dt_z1)
+
+     
+ggplot(coef_dt_x1,aes(x=lag1_x,y=lag2_x,color=instances)) + geom_point(size = 3)
+ggplot(coef_dt_y1,aes(x=lag1_y,y=lag2_y,color=instances)) + geom_point(size = 3)
+ggplot(coef_dt_z1,aes(x=lag1_z,y=lag2_z,color=instances)) + geom_point(size = 3)
+
+```
+
+By plotting our new data set, we see our lag values for x, y and z. Visualization is shown like overlapping because we used 2D scatter plot. 
+
+## Class based representation
+
+Here we use autogressive model with lag2 again. We can represent the series with goodness of fit to class-based models. We first create fit functions for x, y and z. Then we build our model for all axes. 
+
+```{r}
+class_id=unique(im_merged$class)
+
+fit_ar2_x2=function(dat){
+    fit_x2=lm(location_x~lag1_x+lag2_x,dat)
+    return(fit_x2)
+}
+
+
+fit_ar2_y2=function(dat){
+    fit_y2=lm(location_y~lag1_y+lag2_y,dat)
+    return(data.frame(t(coef(fit_y2))))
+}
+
+
+fit_ar2_z2=function(dat){
+    fit_z2=lm(location_z~lag1_z+lag2_z,dat)
+    return(data.frame(t(coef(fit_z2))))
+}
+
+fitted_model_x2=lapply(class_id,function(x) fit_ar2_x2(im_merged[class==x]))
+fitted_model_y2=lapply(class_id,function(y) fit_ar2_y2(im_merged[class==y]))
+fitted_model_z2=lapply(class_id,function(z) fit_ar2_z2(im_merged[class==z]))
+
+merged_p=copy(im_merged)                   
+for(i in 1:length(class_id)){
+    current_class1=class_id[i]
+    merged_p[,paste0('residual_',current_class1):=location_x-predict(fitted_model_x2[[i]],merged_p)] 
+    
+}
+                     
+head(merged_p[,c(19:26)])
+
+```
+
+We can see the residual values. Here first two values are NA because of lag2. Then we will calculate mean for all 8 classes
+
+```{r}
+
+residual_stats=merged_p[,list(m1=mean(residual_1,na.rm=T),
+                              m2=mean(residual_2,na.rm=T),
+                              m3=mean(residual_3,na.rm=T),
+                              m4=mean(residual_4,na.rm=T),
+                              m5=mean(residual_5,na.rm=T),
+                              m6=mean(residual_6,na.rm=T),
+                              m7=mean(residual_7,na.rm=T),
+                              m8=mean(residual_8,na.rm=T)),by=list(instances,class)]
+head(residual_stats)
+
+residual_stats=melt(residual_stats,id.vars=c('instances','class'))
+
+ggplot(residual_stats, aes(x=variable, y=value, color=variable)) +
+  geom_boxplot() + facet_wrap(~class)
+
+```
+
+As we see from the box plots, classes have different values and have different means. We can use this information to seperate and analyze them from each other.
+
+## Conclusion
+
+From part 2, we can compare the two methods we used for representation. In individual model representation we used autoregressive model with lag2 and we have some overlaps in scatter plot. In class based representation we also used autoregressive model with lag2. But different from individual model representation, we used mean calculation approach in class based representation method. The box plot seems more reasonable representation than scatter plot. We can learn more information from analyzing the box plot. So using class based representation will be more helpful to us in analyzing the data and the classes. We also had great visualizations by using class-instance columns method.   
