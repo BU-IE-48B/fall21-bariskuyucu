@@ -133,7 +133,7 @@ fig
 
 ```
 
-In gesture vocabulary figure in our pdf, first image has a sharp corner. In our plot we don't have the sharp cornet but the shape is similar.
+In gesture vocabulary figure in our pdf, first image has a sharp corner. In our plot we don't have the sharp corner but the shape is similar.
 
 # Class 2 Instance 222
 
@@ -175,7 +175,7 @@ fig
 
 ```
 
-In gesture vocabulary figure in our pdf, third image is a straight line. In our plot the image is like a straight line but at the end of it, it has a litte curve.
+In gesture vocabulary figure in our pdf, third image is a straight line. In our plot the image is like a straight line but at the end of it, it has a little curve.
 
 # Class 4 Instance 444
 
@@ -196,7 +196,7 @@ fig
 
 ```
 
-In gesture vocabulary figure in our pdf, fourth image is a straight line. In our plot the image is like a straight line but at the beginning but later, it becomes a curve.
+In gesture vocabulary figure in our pdf, fourth image is a straight line. In our plot the image is like a straight line at the beginning but later, it becomes a curve.
 
 # Class 5 Instance 555
 
@@ -218,7 +218,7 @@ fig
 ```
 
 
-In gesture vocabulary figure in our pdf, fifth image is a straight line. In our plot the image is like a straight line but at the beginning but later, it becomes a curve.
+In gesture vocabulary figure in our pdf, fifth image is a straight line. In our plot the image is like a straight line at the beginning but later, it becomes a curve.
 
 # Class 6 Instance 666
 
@@ -240,7 +240,7 @@ fig
 
 ```
 
-In gesture vocabulary figure in our pdf, sixth image is a straight line. In our plot the image is like a straight line but at the beginning but later, it has some oscillations in the end.
+In gesture vocabulary figure in our pdf, sixth image is a straight line. In our plot the image is like a straight line at the beginning but later, it has some oscillations in the end.
 
 # Class 7 Instance 777
 
