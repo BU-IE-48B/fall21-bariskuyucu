@@ -1,0 +1,267 @@
+---
+title: "hw2"
+author: "Ekrem Barış Kuyucu"
+date: "17 11 2021"
+output: html_document
+---
+
+## Introduction
+
+In this project we are asked to use penalized regression approaches for time series representation to calculate the accuracy of fused lasso, regression tree and raw data methods. We have our CBF data and we will do some data manipulations to first find the error and lambda values, then we will plot them and finally we will find the distances between their nearest neighbours by using euclidian distance method. After finding the lambda values and MSE values, we will  find the accuracy of the methods by using the calculated distances.
+
+```{r}
+
+library(data.table,quietly = TRUE,warn.conflicts = FALSE)
+library(ggplot2,quietly = TRUE,warn.conflicts = FALSE)
+library(repr,quietly = TRUE,warn.conflicts = FALSE)
+library(rpart,quietly = TRUE,warn.conflicts = FALSE)
+library(rattle,quietly = TRUE,warn.conflicts = FALSE)
+library(TSrepr,quietly = TRUE,warn.conflicts = FALSE)
+library(zoo,quietly = TRUE,warn.conflicts = FALSE)
+library(genlasso,quietly = TRUE,warn.conflicts = FALSE)
+library(e1071,quietly = TRUE,warn.conflicts = FALSE)
+library(MLmetrics,quietly = TRUE,warn.conflicts = FALSE)
+library(shiny,quietly = TRUE,warn.conflicts = FALSE)
+library(manipulateWidget,quietly = TRUE,warn.conflicts = FALSE)
+library(TSclust,quietly = TRUE,warn.conflicts = FALSE)
+
+```
+
+We read our data with fread function. We do some data manipulation to understand the data easier.
+
+```{r}
+dataset='CBF'
+train_data=fread("D:/Boğaziçi/İe48b/hw2/CBF_TRAIN.txt")
+head(train_data[,c(1:10)])
+setnames(train_data,"V1","class")
+train_data[,id:=1:.N]
+head(train_data)
+```
+
+#1 1D Fused Lasso
+
+We will select lambda parameters for each time series. We will use cross validation approach to find the desired lambda values. Our cross validation table here gives us useful information about lambda values for future use.
+
+```{r}
+
+train_data_1=melt(train_data,id.vars=c('id','class'))
+train_data_1[,time:=as.numeric(gsub("\\D", "", variable))-1]
+train_data_1=train_data_1[,list(id,class,time,value)]
+train_data_1=train_data_1[order(id,time)]
+head(train_data_1,20)
+min_lambda=list()
+fused_lasso=list()
+trend_table=trendfilter(as.numeric(train_data[1,-1]),ord= 0)
+trend_table
+cross_validation_table=cv.trendfilter(trend_table,k=10)
+cross_validation_table
+```
+
+We calculated error values for each lambda parameter. Then we plotted the time series by using some of the lambda values we calculated above. We see that in all plots below, different lambda values created different plots.  
+
+```{r}
+lambda_values=data.table(cbind(cross_validation_table$err,cross_validation_table$lambda))
+setnames(lambda_values,"V1","Error")
+setnames(lambda_values,"V2","Lambda values")
+head(lambda_values,20)
+plot(trend_table,lambda=cross_validation_table$lambda.min,main="lambda.min")
+plot(trend_table,lambda=cross_validation_table$lambda.1se,main="lambda.1se")
+plot(trend_table,lambda=cross_validation_table$i.min,main="i.min")
+plot(trend_table,lambda=cross_validation_table$i.1se,main="i.1se")
+
+for (i in 1:30) {
+    f_lasso=fusedlasso1d(as.matrix(train_data[id==i,1:130]))
+    fused_lasso[[i]]=f_lasso 
+    cross_validation=cv.trendfilter(fused_lasso[[i]],k=10)
+    min_lambda[[i]]=cross_validation$lambda.min
+}
+
+```
+With 1D Fused Lasso method, we found the lambda values and error values for them.  
+
+#2 Regression trees method
+
+In this method, our aim is to build regression trees by using time parameter. We will take complexity parameter as zero, minsplit as 20, minbucket as 10 and use depth between 1 and 10. We will look the values between 1 and 5 to see some values and to have some idea about these values. 
+
+```{r}
+depth_list=list()
+tree_list=list()
+search_range=list(minsplit=20,cp=0, minbucket=10,maxdepth=1:10)
+
+for (i in 1:30) {
+   tune_func=tune(rpart,value~time,data=train_data_1[id==i],ranges=search_range)
+    depth_list[[i]]=tune_func
+    reg_tree=rpart(value~time,train_data_1[id==i],control=rpart.control(minsplit=20,minbucket=10,cp=0, maxdepth=depth_list[[i]]$best.parameters[,4]))
+    tree_list[[i]]=reg_tree
+     
+}
+depth_list[[1]]
+depth_list[[2]]
+depth_list[[3]]
+depth_list[[4]]
+depth_list[[5]]
+
+tree_list[[1]]
+tree_list[[2]]
+tree_list[[3]]
+tree_list[[4]]
+tree_list[[5]]
+
+```
+
+From the calculations above we found some performance values for different id values. Now we will see that how these performance values create different types of regression trees.
+
+```{r}
+example1=train_data_1[id==1]
+example2=train_data_1[id==2]
+example3=train_data_1[id==3]
+example4=train_data_1[id==4]
+example5=train_data_1[id==5]
+fit1=tree_list[[1]]
+fancyRpartPlot(fit1)
+fit2=tree_list[[2]]
+fancyRpartPlot(fit2)
+fit3=tree_list[[3]]
+fancyRpartPlot(fit3)
+fit4=tree_list[[4]]
+fancyRpartPlot(fit4)
+fit5=tree_list[[5]]
+fancyRpartPlot(fit5)
+head(example1,10)
+head(example2,10)
+head(example3,10)
+head(example4,10)
+head(example5,10)
+```
+
+From the values we calculated, we built our regression trees. From these trees we saw that different id's have different values and this resulted in different regression trees. Bigger performance values gave us more branched tree structures. 
+
+```{r}
+example1[,tree_regression:=predict(tree_list[[1]],example1)]
+example2[,tree_regression:=predict(tree_list[[2]],example2)]
+example3[,tree_regression:=predict(tree_list[[3]],example3)]
+example4[,tree_regression:=predict(tree_list[[4]],example4)]
+example5[,tree_regression:=predict(tree_list[[5]],example5)]
+melted1=melt(example1,id.vars='time',measure.vars=c('value','tree_regression'))
+melted2=melt(example2,id.vars='time',measure.vars=c('value','tree_regression'))
+melted3=melt(example3,id.vars='time',measure.vars=c('value','tree_regression'))
+melted4=melt(example4,id.vars='time',measure.vars=c('value','tree_regression'))
+melted5=melt(example5,id.vars='time',measure.vars=c('value','tree_regression'))
+ggplot(melted1,aes(x=time,y=value,color=variable))+geom_line()
+ggplot(melted2,aes(x=time,y=value,color=variable))+geom_line()
+ggplot(melted3,aes(x=time,y=value,color=variable))+geom_line()
+ggplot(melted4,aes(x=time,y=value,color=variable))+geom_line()
+ggplot(melted5,aes(x=time,y=value,color=variable))+geom_line()
+
+```
+
+Above we melted our data to get some better visualization on bell, funnel and cylinder shapes. From the plots, we see that first 3 id values gave us a cylinder shaped plot. 4th id value gave funnel and 5th id value gabe bell shaped plot.
+
+#3 Comparison of the first two methods
+
+To compare these two methods, we need to find the fused lasso and regression tree values and combine them in one data table. Then we will see the values of fused lasso and regression tree for some of the id values. 
+
+```{r}
+fitted=list()
+f_mse=list()
+t_mse=list()
+
+
+for(i in 1:30){
+    comparison=train_data_1[id==i] 
+    comparison[,fused_lasso_values:=predict(fused_lasso[[i]],lambda=min_lambda[[i]],comparison)$fit[3:130]]
+    comparison[,tree_regression_values:=predict(tree_list[[i]],comparison)]
+    fitted[[i]]=comparison
+    
+}
+head(fitted,10)
+
+```
+
+We will calculate the MSE for both methods and we will show the box plot of them. To calculate the MSE values, we used some data manipulations below. We used observed and calculated values to find the MSE for both methods. 
+
+```{r}
+fitted1 = do.call(rbind,fitted)
+mse_value=melt(fitted1,id.vars=c("id","class","time"),measure.vars=c("value","tree_regression_values","fused_lasso_values"))
+mse_value=merge(mse_value,train_data_1[,list(id,class,time,observed=value)],by=c("id","class","time"))
+head(mse_value,20)
+mse=mse_value[!(variable=="value"),list(mse_value=mean((value-observed)^2)),list(id,class,variable)]
+head(mse,20)
+ggplot(mse,aes(x=variable,y=mse_value))+facet_wrap(~class)+geom_boxplot()
+
+```
+
+From the box plots, we see that regression tree has better MSE that means it has lower error than fused lasso method. We can conclude that regression tree method is more useful than fused lasso method. 
+
+#4 Nearest neighbour method
+
+We are asked to use raw time series against our two studied methods above. For this we will calculate the euclidian distances for raw time series, fused lasso method and regression tree method. With diss function, we can calculate the euclidian distances in our created matrices.
+
+```{r}
+
+train_matrix=as.matrix(train_data[,2:130])
+rownames(train_matrix) = train_matrix[,129]
+dist=as.matrix(diss(train_matrix,METHOD="EUCL"))
+dist[dist==0]=100000
+dist_1=apply(dist,2,which.min)
+dist_2=apply(dist,2,min)
+raw_data=data.frame(series=colnames(dist),nearest_neighbour=rownames(dist)[dist_1],distance=dist_2)
+raw_data=merge(raw_data,train_data[,list(nearest_neighbour=id,predicted=class)],by="nearest_neighbour")
+raw_data=merge(raw_data,train_data[,list(series=id,actual=class)],by="series")
+raw_data$class=ifelse(raw_data$predicted==raw_data$actual,1,0)
+head(raw_data,10)
+
+```
+
+We will use the same method above to find the euclidian distance in fused lasso method. We want our predicted and actual class values to be the same. We created class column in order to see whether predicted and actual have the same class value. 
+
+```{r}
+
+fus_l=reshape(fitted1[,c("id","time", "fused_lasso_values")],idvar="id",timevar="time",direction="wide")
+colnames(fus_l)=gsub("fused_lasso_values","V",names(fus_l))
+head(fus_l)
+train_matrix=as.matrix(fus_l)
+rownames(train_matrix)=train_matrix[,1]
+dist=as.matrix(diss(train_matrix,METHOD="EUCL"))
+dist[dist==0]=1000000
+dist_3=apply(dist,2,which.min)
+dist_4=apply(dist,2,min)
+l_res=data.frame(series=colnames(dist),nearest_neighbour=rownames(dist)[dist_3],distance=dist_4)
+l_res=merge(l_res,train_data[,list(nearest_neighbour=id,predicted=class)],by="nearest_neighbour")
+l_res=merge(l_res,train_data[,list(series=id,actual=class)],by="series")
+l_res$class=ifelse(l_res$predicted==l_res$actual,1,0)
+l_res
+```
+
+We will use the same method above to find the euclidian distance in regression tree method. We want our predicted and actual class values to be the same. We created class column in order to see whether predicted and actual have the same class value. 
+
+```{r}
+
+t_regression=reshape(fitted1[,c("id","time","tree_regression_values")],idvar="id",timevar="time",direction="wide")
+colnames(t_regression)=gsub("tree_regression_values","V",names(t_regression))
+head(t_regression)
+train_matrix=as.matrix(t_regression)
+rownames(train_matrix)=train_matrix[,1]
+dist=as.matrix(diss(train_matrix,METHOD="EUCL"))
+dist[dist==0]=1000000
+dist_5=apply(dist,2,which.min)
+dist_6=apply(dist,2,min)
+t_res=data.frame(series=colnames(dist),nearest_neighbour=rownames(dist)[dist_5],distance=dist_6)
+t_res=merge(t_res,train_data[,list(nearest_neighbour=id,predicted =class)],by="nearest_neighbour")
+t_res=merge(t_res,train_data[,list(series=id,actual=class)],by="series")
+t_res$class=ifelse(t_res$predicted==t_res$actual,1,0)
+t_res
+
+```
+
+```{r}
+sum(raw_data$class)/nrow(raw_data)
+sum(l_res$class)/nrow(l_res)
+sum(t_res$class)/nrow(t_res)
+
+```
+We calculated the accuracy of the three methods and we saw that the accuracy in raw data in best and the accuracy in regression tree method follows it. Fused lasso method has the lowest accuracy among them.
+
+# Conclusion
+
+Normally we expected to find better accuracy values in fused lasso and regression tree methods, but nearest neighbour method gave the best accuracy here. The reason for this occasion may be the high lambda values for some of the id values. By choosing some different id and lambda values we may be able to find better accuracy values for these two methods.
