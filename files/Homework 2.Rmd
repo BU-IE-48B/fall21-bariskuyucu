@@ -38,7 +38,7 @@ train_data[,id:=1:.N]
 head(train_data)
 ```
 
-#1 1D Fused Lasso
+## 1 1D Fused Lasso
 
 We will select lambda parameters for each time series. We will use cross validation approach to find the desired lambda values. Our cross validation table here gives us useful information about lambda values for future use.
 
@@ -79,7 +79,7 @@ for (i in 1:30) {
 ```
 With 1D Fused Lasso method, we found the lambda values and error values for them.  
 
-#2 Regression trees method
+## 2 Regression trees method
 
 In this method, our aim is to build regression trees by using time parameter. We will take complexity parameter as zero, minsplit as 20, minbucket as 10 and use depth between 1 and 10. We will look the values between 1 and 5 to see some values and to have some idea about these values. 
 
@@ -157,7 +157,7 @@ ggplot(melted5,aes(x=time,y=value,color=variable))+geom_line()
 
 Above we melted our data to get some better visualization on bell, funnel and cylinder shapes. From the plots, we see that first 3 id values gave us a cylinder shaped plot. 4th id value gave funnel and 5th id value gabe bell shaped plot.
 
-#3 Comparison of the first two methods
+## 3 Comparison of the first two methods
 
 To compare these two methods, we need to find the fused lasso and regression tree values and combine them in one data table. Then we will see the values of fused lasso and regression tree for some of the id values. 
 
@@ -193,7 +193,7 @@ ggplot(mse,aes(x=variable,y=mse_value))+facet_wrap(~class)+geom_boxplot()
 
 From the box plots, we see that regression tree has better MSE that means it has lower error than fused lasso method. We can conclude that regression tree method is more useful than fused lasso method. 
 
-#4 Nearest neighbour method
+## 4 Nearest neighbour method
 
 We are asked to use raw time series against our two studied methods above. For this we will calculate the euclidian distances for raw time series, fused lasso method and regression tree method. With diss function, we can calculate the euclidian distances in our created matrices.
 
@@ -262,6 +262,6 @@ sum(t_res$class)/nrow(t_res)
 ```
 We calculated the accuracy of the three methods and we saw that the accuracy in raw data in best and the accuracy in regression tree method follows it. Fused lasso method has the lowest accuracy among them.
 
-# Conclusion
+## Conclusion
 
 Normally we expected to find better accuracy values in fused lasso and regression tree methods, but nearest neighbour method gave the best accuracy here. The reason for this occasion may be the high lambda values for some of the id values. By choosing some different id and lambda values we may be able to find better accuracy values for these two methods.
