@@ -1,0 +1,1436 @@
+## Introduction
+
+In this project our aim is to inspect 5 different time series classification datasets and evaluate them with time series representation and classification methods. We will use nearest neighbor approach. We will use some of the results from classification methods and then use them to find the accuracies on test datas.
+
+```{r}
+library(data.table,quietly = TRUE,warn.conflicts = FALSE)
+library(ggplot2,quietly = TRUE,warn.conflicts = FALSE)
+library(repr,quietly = TRUE,warn.conflicts = FALSE)
+library(rpart,quietly = TRUE,warn.conflicts = FALSE)
+library(rattle,quietly = TRUE,warn.conflicts = FALSE)
+library(TSrepr,quietly = TRUE,warn.conflicts = FALSE)
+library(zoo,quietly = TRUE,warn.conflicts = FALSE)
+library(genlasso,quietly = TRUE,warn.conflicts = FALSE)
+library(e1071,quietly = TRUE,warn.conflicts = FALSE)
+library(MLmetrics,quietly = TRUE,warn.conflicts = FALSE)
+library(shiny,quietly = TRUE,warn.conflicts = FALSE)
+library(manipulateWidget,quietly = TRUE,warn.conflicts = FALSE)
+library(TSclust,quietly = TRUE,warn.conflicts = FALSE)
+library(plyr,quietly = TRUE,warn.conflicts = FALSE)
+library(TunePareto,quietly = TRUE,warn.conflicts = FALSE)
+library(dtw,quietly = TRUE,warn.conflicts = FALSE)
+library(TSdist,quietly = TRUE,warn.conflicts = FALSE)
+library(caret,quietly = TRUE,warn.conflicts = FALSE)
+```
+
+## Classification function
+
+We will use the classification function to find the accuracy of our work later.
+
+```{r}
+
+nn_classify_cv=function(dist_matrix,train_class,test_indices,k=1){
+    
+    test_distances_to_train=dist_matrix[test_indices,]
+    test_distances_to_train=test_distances_to_train[,-test_indices]
+    train_class=train_class[-test_indices]
+    ordered_indices=apply(test_distances_to_train,1,order)
+    if(k==1){
+        nearest_class=as.numeric(trainclass[as.numeric(ordered_indices[1,])])
+        nearest_class=data.table(id=test_indices,nearest_class)
+    } else {
+        nearest_class=apply(ordered_indices[1:k,],2,function(x) {trainclass[x]})
+        nearest_class=data.table(id=test_indices,t(nearest_class))
+    }
+    long_nn_class=melt(nearest_class,'id')
+    class_counts=long_nn_class[,.N,list(id,value)]
+    class_counts[,predicted_prob:=N/k]
+    wide_class_prob_predictions=dcast(class_counts,id~value,value.var='predicted_prob')
+    wide_class_prob_predictions[is.na(wide_class_prob_predictions)]=0
+    class_predictions=class_counts[,list(predicted=value[which.max(N)]),by=list(id)]
+    return(list(prediction=class_predictions,prob_estimates=wide_class_prob_predictions))
+    
+}
+```
+
+## 1st Dataset Plane
+
+## Data Manipulation
+
+We read our data with fread function. We do some data manipulation to understand the data easier.
+
+```{r}
+
+plane_train=fread("D:/Boğaziçi/İe48b/Univariate_arff/Plane/Plane_TRAIN.txt")
+plane_test=fread("D:/Boğaziçi/İe48b/Univariate_arff/Plane/Plane_TEST.txt")
+head(plane_train,10)
+head(plane_test,10)
+
+setnames(plane_train,"V1","class")
+plane_train=plane_train[order(class)]
+plane_train[,class:=as.character(class)]
+plane_train[,id:=1:.N]
+long_plane_train=melt(plane_train,id.vars=c('id','class'))
+long_plane_train[,time:=as.numeric(gsub("\\D", "", variable))]
+long_plane_train=long_plane_train[,list(id,class,time,value)]
+long_plane_train=long_plane_train[order(id,time)]
+head(long_plane_train,20)
+
+```
+
+## Visualization
+
+We use some plots to see our data and have some idea about the patterns. 
+
+```{r}
+plot(x=long_plane_train[id==1 & class==1]$time,y=long_plane_train[id==1 &  class==1]$value)
+plot(x=long_plane_train[id==20 & class==2]$time,y=long_plane_train[id==20 &  class==2]$value)
+plot(x=long_plane_train[id==30 & class==3]$time,y=long_plane_train[id==30 &  class==3]$value)
+```
+
+## Fused Lasso Approach
+
+We will use fused lasso approach for one of our classification methods. 
+
+```{r}
+train_row_1=nrow(plane_train)
+test_row_1=nrow(plane_test)
+f_res=vector("list",train_row_1)
+for(i in 1:train_row_1){
+      dt_1=long_plane_train[id==i]
+      dt_1=as.matrix(dt_1[,4],rownames=FALSE)
+      f_lasso=trendfilter(dt_1, ord=0)
+      cv=cv.trendfilter(f_lasso)
+      f_res[[i]]=predict.genlasso(f_lasso,cv$lambda.min)
+}
+fused_lasso_dt=vector('list',train_row_1)
+for(i in seq(1:train_row_1)){
+      fused_lasso_dt[[i]]=as.data.table(t(f_res[[i]]$fit))
+}
+lasso_fit=rbindlist(fused_lasso_dt)
+head(lasso_fit,20)
+
+```
+
+
+## Piecewise Approximation Approach
+
+We will use piecewise approximation approach for one of our classification methods. 
+
+```{r}
+train_row_1=nrow(plane_train)
+test_row_1=nrow(plane_test)
+seg_len_1=5
+long_plane_train=long_plane_train[order(id,time)]
+paa_res=vector('list',train_row_1)
+for (i in 1:train_row_1){
+      data_ts=long_plane_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_1,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_1)
+for (i in 1:train_row_1) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_5=rbindlist(paa_list) 
+head(paa_seg_5,20)
+
+seg_len_2=10
+long_plane_train=long_plane_train[order(id,time)]
+paa_res=vector('list',train_row_1)
+for (i in 1:train_row_1){
+      data_ts=long_plane_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_2,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_1)
+for (i in 1:train_row_1) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_10=rbindlist(paa_list) 
+head(paa_seg_10,20)
+
+seg_len_3=20
+long_plane_train=long_plane_train[order(id,time)]
+paa_res=vector('list',train_row_1)
+for (i in 1:train_row_1){
+      data_ts=long_plane_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_3,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_1)
+for (i in 1:train_row_1) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_20=rbindlist(paa_list) 
+head(paa_seg_20,20)
+
+
+plot(x=long_plane_train[id==1 & class==1]$time,y=long_plane_train[id==1 & class==1]$paa_seg_5)
+plot(x=long_plane_train[id==20 & class==2]$time,y=long_plane_train[id==20 & class==2]$paa_seg_10)
+plot(x=long_plane_train[id==30 & class==3]$time,y=long_plane_train[id==30 & class==3]$paa_seg_20)
+
+
+```
+
+
+```{r}
+plane_train_raw=data.frame()
+for(i in 1:length(unique(long_plane_train$id))){
+    plane_train_raw=rbind(plane_train_raw,t(as.data.frame(long_plane_train[id==i]$value)))
+}
+row.names(plane_train_raw)=NULL
+```
+
+## Raw time series distances
+
+```{r}
+
+dataset='Plane'
+main_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Plane/ClassificationData')
+dist_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Plane/ClassificationData/distances')
+large_number=10000
+
+dist_euc_1=as.matrix(dist(plane_train_raw))
+diag(dist_euc_1)=large_number
+fwrite(dist_euc_1,sprintf('%s/_euc_dist_1.csv',dist_path),col.names=F)
+
+dist_dtw_1=as.matrix(dtwDist(plane_train_raw))
+diag(dist_dtw_1)=large_number
+fwrite(dist_dtw_1,sprintf('%s/_dtw_raw_dist_1.csv',dist_path),col.names=F)
+
+dist_lcss_1=TSDatabaseDistances(plane_train_raw,distance='lcss',epsilon=0.05)
+dist_lcss_1=as.matrix(dist_lcss_1)
+diag(dist_lcss_1)=large_number
+fwrite(dist_lcss_1,sprintf('%s/_lcss_dist_1.csv',dist_path),col.names=F)  
+
+dist_erp_1=TSDatabaseDistances(plane_train_raw,distance='erp',g=0.5)
+dist_erp_1=as.matrix(dist_erp_1)
+diag(dist_erp_1)=large_number
+fwrite(dist_erp_1,sprintf('%s/_erp_dist_1.csv', dist_path),col.names=F)
+
+
+
+```
+
+## Fused Lasso Distances
+
+
+```{r}
+
+dist_euc_lasso=as.matrix(dist(lasso_fit))
+diag(dist_euc_lasso)=large_number
+fwrite(dist_euc_lasso,sprintf('%s_euc_lasso_dist.csv',dist_path),col.names=F)
+
+dist_dtw_2=as.matrix(dtwDist(lasso_fit))
+diag(dist_dtw_2)=large_number
+fwrite(dist_dtw_2,sprintf('%s/_dtw_raw_dist_2.csv',dist_path),col.names=F)
+
+dist_lcss_2=TSDatabaseDistances(lasso_fit,distance='lcss',epsilon=0.07)
+dist_lcss_2=as.matrix(dist_lcss_2)
+diag(dist_lcss_2)=large_number
+fwrite(dist_lcss_2,sprintf('%s/_lcss_dist_2.csv',dist_path),col.names=F)  
+
+dist_erp_2=TSDatabaseDistances(lasso_fit,distance='erp',g=0.7)
+dist_erp_2=as.matrix(dist_erp_2)
+diag(dist_erp_2)=large_number
+fwrite(dist_erp_2,sprintf('%s/_erp_dist_2.csv', dist_path),col.names=F)
+
+```
+
+
+## Piecewise Approximation Approach distances
+
+```{r}
+
+dist_euc_paa=as.matrix(dist(paa_seg_5))
+diag(dist_euc_paa)=large_number
+fwrite(dist_euc_paa,sprintf('%s/_euc_raw_paa_segment_5_dist.csv',dist_path),col.names=F)
+
+dist_euc_3=as.matrix(dist(paa_seg_5))
+diag(dist_euc_3)=large_number
+fwrite(dist_euc_3,sprintf('%s/_euc_dist_3.csv',dist_path),col.names=F)
+
+dist_dtw_3=as.matrix(dtwDist(paa_seg_5))
+diag(dist_dtw_3)=large_number
+fwrite(dist_dtw_3,sprintf('%s/_dtw_raw_dist_3.csv',dist_path),col.names=F)
+
+dist_lcss_3=TSDatabaseDistances(paa_seg_5,distance='lcss',epsilon=0.09)
+dist_lcss_3=as.matrix(dist_lcss_3)
+diag(dist_lcss_3)=large_number
+fwrite(dist_lcss_3,sprintf('%s/_lcss_dist_3.csv',dist_path),col.names=F)  
+
+dist_erp_3=TSDatabaseDistances(paa_seg_5,distance='erp',g=0.9)
+dist_erp_3=as.matrix(dist_erp_3)
+diag(dist_erp_3)=large_number
+fwrite(dist_erp_3,sprintf('%s/_erp_dist_3.csv', dist_path),col.names=F)
+
+```
+
+
+
+```{r}
+set.seed(213)
+nof_rep=10
+n_fold=10
+trainclass=c()
+for(i in 1:length(unique(long_plane_train$id))){
+    trainclass=c(trainclass,unique(long_plane_train[id==i,class]))
+}
+cv_indices=generateCVRuns(trainclass,ntimes=nof_rep,nfold=n_fold,leaveOneOut=FALSE,stratified=TRUE)
+str(cv_indices)
+
+dist_folder=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Plane/ClassificationData/distances')
+dist_files=list.files(dist_folder, full.names=T)
+
+```
+
+
+
+
+```{r}
+k_levels=c(1,3,5)
+approach_file=list.files(dist_folder)
+result=vector('list',length(dist_files)*nof_rep*n_fold*length(k_levels))
+iter=1
+for(m in 1:length(dist_files)){ #
+    dist_mat=as.matrix(fread(dist_files[m],header=FALSE))
+    for(i in 1:nof_rep){
+        this_fold=cv_indices[[i]]
+        for(j in 1:n_fold){
+            test_indices=this_fold[[j]]
+            for(k in 1:length(k_levels)){
+                current_k=k_levels[k]
+                current_fold=nn_classify_cv(dist_mat,trainclass,test_indices,k=current_k)
+                accuracy=sum(trainclass[test_indices]==current_fold$prediction$predicted)/length(test_indices)
+                tmp=data.table(approach=approach_file[m],repid=i,foldid=j,
+                               k=current_k,acc=accuracy)
+                result[[iter]]=tmp
+                iter=iter+1
+                
+            }
+            
+        }
+    
+    }   
+    
+}
+```
+
+
+```{r}
+
+final_results=rbindlist(result)
+summarized_results=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+summarized_results[order(-avg_acc)]
+overall_results_summary=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+overall_results_summary[which.max(overall_results_summary$avg_acc),]
+ggplot(final_results,aes(x=paste0(approach,'+',k),y=acc))+geom_boxplot()+coord_flip()
+```
+
+Best result is from k=3, erp distance 1 value which is 0.82. It is from raw dataset.
+
+
+## 2nd Dataset Trace
+
+## Data Manipulation
+
+We read our data with fread function. We do some data manipulation to understand the data easier.
+
+```{r}
+
+trace_train=fread("D:/Boğaziçi/İe48b/Univariate_arff/Trace/Trace_TRAIN.txt")
+trace_test=fread("D:/Boğaziçi/İe48b/Univariate_arff/Trace/Trace_TEST.txt")
+head(trace_train,10)
+head(trace_test,10)
+
+setnames(trace_train,"V1","class")
+trace_train=trace_train[order(class)]
+trace_train[,class:=as.character(class)]
+trace_train[,id:=1:.N]
+long_trace_train=melt(trace_train,id.vars=c('id','class'))
+long_trace_train[,time:=as.numeric(gsub("\\D", "", variable))]
+long_trace_train=long_trace_train[,list(id,class,time,value)]
+long_trace_train=long_trace_train[order(id,time)]
+head(long_trace_train,20)
+long_trace_train
+```
+
+## Visualization
+
+We use some plots to see our data and have some idea about the patterns. 
+
+```{r}
+plot(x=long_trace_train[id==1 & class==1]$time,y=long_trace_train[id==1 &  class==1]$value)
+plot(x=long_trace_train[id==2 & class==1]$time,y=long_trace_train[id==2 &  class==1]$value)
+plot(x=long_trace_train[id==3 & class==1]$time,y=long_trace_train[id==3 &  class==1]$value)
+```
+
+## Fused Lasso Approach
+
+We will use fused lasso approach for one of our classification methods. 
+
+```{r}
+train_row_2=nrow(trace_train)
+test_row_2=nrow(trace_test)
+f_res=vector("list",train_row_2)
+for(i in 1:train_row_2){
+      dt_2=long_trace_train[id==i]
+      dt_2=as.matrix(dt_2[,4],rownames=FALSE)
+      f_lasso=trendfilter(dt_2, ord=0)
+      cv=cv.trendfilter(f_lasso)
+      f_res[[i]]=predict.genlasso(f_lasso,cv$lambda.min)
+}
+fused_lasso_dt=vector('list',train_row_2)
+for(i in seq(1:train_row_2)){
+      fused_lasso_dt[[i]]=as.data.table(t(f_res[[i]]$fit))
+}
+lasso_fit=rbindlist(fused_lasso_dt)
+head(lasso_fit,20)
+
+```
+
+
+## Piecewise Approximation Approach
+
+We will use piecewise approximation approach for one of our classification methods. 
+
+```{r}
+train_row_2=nrow(trace_train)
+test_row_2=nrow(trace_test)
+seg_len_1=5
+long_trace_train=long_trace_train[order(id,time)]
+paa_res=vector('list',train_row_2)
+for (i in 1:train_row_2){
+      data_ts=long_trace_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_1,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_2)
+for (i in 1:train_row_2) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_5=rbindlist(paa_list) 
+head(paa_seg_5,20)
+
+seg_len_2=10
+long_plane_train=long_trace_train[order(id,time)]
+paa_res=vector('list',train_row_2)
+for (i in 1:train_row_2){
+      data_ts=long_trace_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_2,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_2)
+for (i in 1:train_row_2) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_10=rbindlist(paa_list) 
+head(paa_seg_10,20)
+
+seg_len_3=20
+long_plane_train=long_trace_train[order(id,time)]
+paa_res=vector('list',train_row_2)
+for (i in 1:train_row_2){
+      data_ts=long_trace_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_3,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_2)
+for (i in 1:train_row_2) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_20=rbindlist(paa_list) 
+head(paa_seg_20,20)
+
+
+plot(x=long_plane_train[id==1 & class==1]$time,y=long_plane_train[id==1 & class==1]$paa_seg_5)
+plot(x=long_plane_train[id==2 & class==1]$time,y=long_plane_train[id==2 & class==1]$paa_seg_10)
+plot(x=long_plane_train[id==3 & class==1]$time,y=long_plane_train[id==3 & class==1]$paa_seg_20)
+
+
+```
+
+
+```{r}
+trace_train_raw=data.frame()
+for(i in 1:length(unique(long_trace_train$id))){
+    trace_train_raw=rbind(trace_train_raw,t(as.data.frame(long_trace_train[id==i]$value)))
+}
+row.names(trace_train_raw)=NULL
+```
+
+## Raw time series distances
+
+```{r}
+
+dataset='Trace'
+main_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Trace/ClassificationData')
+dist_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Trace/ClassificationData/distances')
+large_number=10000
+
+dist_euc_1=as.matrix(dist(trace_train_raw))
+diag(dist_euc_1)=large_number
+fwrite(dist_euc_1,sprintf('%s/_euc_dist_1.csv',dist_path),col.names=F)
+
+dist_dtw_1=as.matrix(dtwDist(trace_train_raw))
+diag(dist_dtw_1)=large_number
+fwrite(dist_dtw_1,sprintf('%s/_dtw_raw_dist_1.csv',dist_path),col.names=F)
+
+dist_lcss_1=TSDatabaseDistances(trace_train_raw,distance='lcss',epsilon=0.05)
+dist_lcss_1=as.matrix(dist_lcss_1)
+diag(dist_lcss_1)=large_number
+fwrite(dist_lcss_1,sprintf('%s/_lcss_dist_1.csv',dist_path),col.names=F)  
+
+dist_erp_1=TSDatabaseDistances(trace_train_raw,distance='erp',g=0.5)
+dist_erp_1=as.matrix(dist_erp_1)
+diag(dist_erp_1)=large_number
+fwrite(dist_erp_1,sprintf('%s/_erp_dist_1.csv', dist_path),col.names=F)
+
+
+
+```
+
+## Fused Lasso Distances
+
+
+```{r}
+
+dist_euc_lasso=as.matrix(dist(lasso_fit))
+diag(dist_euc_lasso)=large_number
+fwrite(dist_euc_lasso,sprintf('%s_euc_lasso_dist.csv',dist_path),col.names=F)
+
+dist_dtw_2=as.matrix(dtwDist(lasso_fit))
+diag(dist_dtw_2)=large_number
+fwrite(dist_dtw_2,sprintf('%s/_dtw_raw_dist_2.csv',dist_path),col.names=F)
+
+dist_lcss_2=TSDatabaseDistances(lasso_fit,distance='lcss',epsilon=0.07)
+dist_lcss_2=as.matrix(dist_lcss_2)
+diag(dist_lcss_2)=large_number
+fwrite(dist_lcss_2,sprintf('%s/_lcss_dist_2.csv',dist_path),col.names=F)  
+
+dist_erp_2=TSDatabaseDistances(lasso_fit,distance='erp',g=0.7)
+dist_erp_2=as.matrix(dist_erp_2)
+diag(dist_erp_2)=large_number
+fwrite(dist_erp_2,sprintf('%s/_erp_dist_2.csv', dist_path),col.names=F)
+
+```
+
+
+## Piecewise Approximation Approach distances
+
+```{r}
+
+dist_euc_paa=as.matrix(dist(paa_seg_5))
+diag(dist_euc_paa)=large_number
+fwrite(dist_euc_paa,sprintf('%s/_euc_raw_paa_segment_5_dist.csv',dist_path),col.names=F)
+
+dist_euc_3=as.matrix(dist(paa_seg_5))
+diag(dist_euc_3)=large_number
+fwrite(dist_euc_3,sprintf('%s/_euc_dist_3.csv',dist_path),col.names=F)
+
+dist_dtw_3=as.matrix(dtwDist(paa_seg_5))
+diag(dist_dtw_3)=large_number
+fwrite(dist_dtw_3,sprintf('%s/_dtw_raw_dist_3.csv',dist_path),col.names=F)
+
+dist_lcss_3=TSDatabaseDistances(paa_seg_5,distance='lcss',epsilon=0.09)
+dist_lcss_3=as.matrix(dist_lcss_3)
+diag(dist_lcss_3)=large_number
+fwrite(dist_lcss_3,sprintf('%s/_lcss_dist_3.csv',dist_path),col.names=F)  
+
+dist_erp_3=TSDatabaseDistances(paa_seg_5,distance='erp',g=0.9)
+dist_erp_3=as.matrix(dist_erp_3)
+diag(dist_erp_3)=large_number
+fwrite(dist_erp_3,sprintf('%s/_erp_dist_3.csv', dist_path),col.names=F)
+
+```
+
+
+
+```{r}
+set.seed(213)
+nof_rep=10
+n_fold=10
+trainclass=c()
+for(i in 1:length(unique(long_trace_train$id))){
+    trainclass=c(trainclass,unique(long_trace_train[id==i,class]))
+}
+cv_indices=generateCVRuns(trainclass,ntimes=nof_rep,nfold=n_fold,leaveOneOut=FALSE,stratified=TRUE)
+str(cv_indices)
+
+dist_folder=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Trace/ClassificationData/distances')
+dist_files=list.files(dist_folder, full.names=T)
+
+```
+
+
+
+
+```{r}
+k_levels=c(1,3,5)
+approach_file=list.files(dist_folder)
+result=vector('list',length(dist_files)*nof_rep*n_fold*length(k_levels))
+iter=1
+for(m in 1:length(dist_files)){ #
+    dist_mat=as.matrix(fread(dist_files[m],header=FALSE))
+    for(i in 1:nof_rep){
+        this_fold=cv_indices[[i]]
+        for(j in 1:n_fold){
+            test_indices=this_fold[[j]]
+            for(k in 1:length(k_levels)){
+                current_k=k_levels[k]
+                current_fold=nn_classify_cv(dist_mat,trainclass,test_indices,k=current_k)
+                accuracy=sum(trainclass[test_indices]==current_fold$prediction$predicted)/length(test_indices)
+                tmp=data.table(approach=approach_file[m],repid=i,foldid=j,
+                               k=current_k,acc=accuracy)
+                result[[iter]]=tmp
+                iter=iter+1
+                
+            }
+            
+        }
+    
+    }   
+    
+}
+```
+
+
+```{r}
+
+final_results=rbindlist(result)
+summarized_results=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+summarized_results[order(-avg_acc)]
+overall_results_summary=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+overall_results_summary[which.max(overall_results_summary$avg_acc),]
+ggplot(final_results,aes(x=paste0(approach,'+',k),y=acc))+geom_boxplot()+coord_flip()
+```
+
+Best result is from k=5, dtw distance 1 value which is 0.949. It is from raw dataset.
+
+
+## 3rd Dataset Ham
+
+## Data Manipulation
+
+We read our data with fread function. We do some data manipulation to understand the data easier.
+
+```{r}
+
+ham_train=fread("D:/Boğaziçi/İe48b/Univariate_arff/Ham/Ham_TRAIN.txt")
+ham_test=fread("D:/Boğaziçi/İe48b/Univariate_arff/Ham/Ham_TEST.txt")
+head(ham_train,10)
+head(ham_test,10)
+
+setnames(ham_train,"V1","class")
+ham_train=ham_train[order(class)]
+ham_train[,class:=as.character(class)]
+ham_train[,id:=1:.N]
+long_ham_train=melt(ham_train,id.vars=c('id','class'))
+long_ham_train[,time:=as.numeric(gsub("\\D", "", variable))]
+long_ham_train=long_ham_train[,list(id,class,time,value)]
+long_ham_train=long_ham_train[order(id,time)]
+head(long_ham_train,20)
+
+```
+
+## Visualization
+
+We use some plots to see our data and have some idea about the patterns. 
+
+```{r}
+plot(x=long_ham_train[id==1 & class==1]$time,y=long_ham_train[id==1 &  class==1]$value)
+plot(x=long_ham_train[id==2 & class==1]$time,y=long_ham_train[id==2 &  class==1]$value)
+plot(x=long_ham_train[id==3 & class==1]$time,y=long_ham_train[id==3 &  class==1]$value)
+```
+
+## Fused Lasso Approach
+
+We will use fused lasso approach for one of our classification methods. 
+
+```{r}
+train_row_3=nrow(ham_train)
+test_row_3=nrow(ham_test)
+f_res=vector("list",train_row_3)
+for(i in 1:train_row_3){
+      dt_3=long_ham_train[id==i]
+      dt_3=as.matrix(dt_3[,4],rownames=FALSE)
+      f_lasso=trendfilter(dt_3, ord=0)
+      cv=cv.trendfilter(f_lasso)
+      f_res[[i]]=predict.genlasso(f_lasso,cv$lambda.min)
+}
+fused_lasso_dt=vector('list',train_row_3)
+for(i in seq(1:train_row_3)){
+      fused_lasso_dt[[i]]=as.data.table(t(f_res[[i]]$fit))
+}
+lasso_fit=rbindlist(fused_lasso_dt)
+head(lasso_fit,20)
+
+```
+
+
+## Piecewise Approximation Approach
+
+We will use piecewise approximation approach for one of our classification methods. 
+
+```{r}
+train_row_3=nrow(ham_train)
+test_row_3=nrow(ham_test)
+seg_len_1=5
+long_ham_train=long_ham_train[order(id,time)]
+paa_res=vector('list',train_row_3)
+for (i in 1:train_row_3){
+      data_ts=long_ham_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_1,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_3)
+for (i in 1:train_row_3) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_5=rbindlist(paa_list) 
+head(paa_seg_5,20)
+
+seg_len_2=10
+long_ham_train=long_ham_train[order(id,time)]
+paa_res=vector('list',train_row_3)
+for (i in 1:train_row_3){
+      data_ts=long_ham_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_2,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_3)
+for (i in 1:train_row_3) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_10=rbindlist(paa_list) 
+head(paa_seg_10,20)
+
+seg_len_3=20
+long_ham_train=long_ham_train[order(id,time)]
+paa_res=vector('list',train_row_3)
+for (i in 1:train_row_3){
+      data_ts=long_ham_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_3,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_3)
+for (i in 1:train_row_3) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_20=rbindlist(paa_list) 
+head(paa_seg_20,20)
+
+
+plot(x=long_plane_train[id==1 & class==1]$time,y=long_plane_train[id==1 & class==1]$paa_seg_5)
+plot(x=long_plane_train[id==2 & class==1]$time,y=long_plane_train[id==2 & class==1]$paa_seg_10)
+plot(x=long_plane_train[id==3 & class==1]$time,y=long_plane_train[id==3 & class==1]$paa_seg_20)
+
+
+```
+
+
+```{r}
+ham_train_raw=data.frame()
+for(i in 1:length(unique(long_ham_train$id))){
+    ham_train_raw=rbind(ham_train_raw,t(as.data.frame(long_ham_train[id==i]$value)))
+}
+row.names(ham_train_raw)=NULL
+```
+
+## Raw time series distances
+
+```{r}
+
+dataset='Ham'
+main_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Ham/ClassificationData')
+dist_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Ham/ClassificationData/distances')
+large_number=10000
+
+dist_euc_1=as.matrix(dist(ham_train_raw))
+diag(dist_euc_1)=large_number
+fwrite(dist_euc_1,sprintf('%s/_euc_dist_1.csv',dist_path),col.names=F)
+
+dist_dtw_1=as.matrix(dtwDist(ham_train_raw))
+diag(dist_dtw_1)=large_number
+fwrite(dist_dtw_1,sprintf('%s/_dtw_raw_dist_1.csv',dist_path),col.names=F)
+
+dist_lcss_1=TSDatabaseDistances(ham_train_raw,distance='lcss',epsilon=0.05)
+dist_lcss_1=as.matrix(dist_lcss_1)
+diag(dist_lcss_1)=large_number
+fwrite(dist_lcss_1,sprintf('%s/_lcss_dist_1.csv',dist_path),col.names=F)  
+
+dist_erp_1=TSDatabaseDistances(ham_train_raw,distance='erp',g=0.5)
+dist_erp_1=as.matrix(dist_erp_1)
+diag(dist_erp_1)=large_number
+fwrite(dist_erp_1,sprintf('%s/_erp_dist_1.csv', dist_path),col.names=F)
+
+
+
+```
+
+## Fused Lasso Distances
+
+
+```{r}
+
+dist_euc_lasso=as.matrix(dist(lasso_fit))
+diag(dist_euc_lasso)=large_number
+fwrite(dist_euc_lasso,sprintf('%s_euc_lasso_dist.csv',dist_path),col.names=F)
+
+dist_dtw_2=as.matrix(dtwDist(lasso_fit))
+diag(dist_dtw_2)=large_number
+fwrite(dist_dtw_2,sprintf('%s/_dtw_raw_dist_2.csv',dist_path),col.names=F)
+
+dist_lcss_2=TSDatabaseDistances(lasso_fit,distance='lcss',epsilon=0.07)
+dist_lcss_2=as.matrix(dist_lcss_2)
+diag(dist_lcss_2)=large_number
+fwrite(dist_lcss_2,sprintf('%s/_lcss_dist_2.csv',dist_path),col.names=F)  
+
+dist_erp_2=TSDatabaseDistances(lasso_fit,distance='erp',g=0.7)
+dist_erp_2=as.matrix(dist_erp_2)
+diag(dist_erp_2)=large_number
+fwrite(dist_erp_2,sprintf('%s/_erp_dist_2.csv', dist_path),col.names=F)
+
+```
+
+
+## Piecewise Approximation Approach distances
+
+```{r}
+
+dist_euc_paa=as.matrix(dist(paa_seg_5))
+diag(dist_euc_paa)=large_number
+fwrite(dist_euc_paa,sprintf('%s/_euc_raw_paa_segment_5_dist.csv',dist_path),col.names=F)
+
+dist_euc_3=as.matrix(dist(paa_seg_5))
+diag(dist_euc_3)=large_number
+fwrite(dist_euc_3,sprintf('%s/_euc_dist_3.csv',dist_path),col.names=F)
+
+dist_dtw_3=as.matrix(dtwDist(paa_seg_5))
+diag(dist_dtw_3)=large_number
+fwrite(dist_dtw_3,sprintf('%s/_dtw_raw_dist_3.csv',dist_path),col.names=F)
+
+dist_lcss_3=TSDatabaseDistances(paa_seg_5,distance='lcss',epsilon=0.09)
+dist_lcss_3=as.matrix(dist_lcss_3)
+diag(dist_lcss_3)=large_number
+fwrite(dist_lcss_3,sprintf('%s/_lcss_dist_3.csv',dist_path),col.names=F)  
+
+dist_erp_3=TSDatabaseDistances(paa_seg_5,distance='erp',g=0.9)
+dist_erp_3=as.matrix(dist_erp_3)
+diag(dist_erp_3)=large_number
+fwrite(dist_erp_3,sprintf('%s/_erp_dist_3.csv', dist_path),col.names=F)
+
+```
+
+
+
+```{r}
+set.seed(213)
+nof_rep=10
+n_fold=10
+trainclass=c()
+for(i in 1:length(unique(long_ham_train$id))){
+    trainclass=c(trainclass,unique(long_ham_train[id==i,class]))
+}
+cv_indices=generateCVRuns(trainclass,ntimes=nof_rep,nfold=n_fold,leaveOneOut=FALSE,stratified=TRUE)
+str(cv_indices)
+
+dist_folder=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Ham/ClassificationData/distances')
+dist_files=list.files(dist_folder, full.names=T)
+
+```
+
+
+
+
+```{r}
+k_levels=c(1,3,5)
+approach_file=list.files(dist_folder)
+result=vector('list',length(dist_files)*nof_rep*n_fold*length(k_levels))
+iter=1
+for(m in 1:length(dist_files)){ #
+    dist_mat=as.matrix(fread(dist_files[m],header=FALSE))
+    for(i in 1:nof_rep){
+        this_fold=cv_indices[[i]]
+        for(j in 1:n_fold){
+            test_indices=this_fold[[j]]
+            for(k in 1:length(k_levels)){
+                current_k=k_levels[k]
+                current_fold=nn_classify_cv(dist_mat,trainclass,test_indices,k=current_k)
+                accuracy=sum(trainclass[test_indices]==current_fold$prediction$predicted)/length(test_indices)
+                tmp=data.table(approach=approach_file[m],repid=i,foldid=j,
+                               k=current_k,acc=accuracy)
+                result[[iter]]=tmp
+                iter=iter+1
+                
+            }
+            
+        }
+    
+    }   
+    
+}
+```
+
+
+```{r}
+
+final_results=rbindlist(result)
+summarized_results=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+summarized_results[order(-avg_acc)]
+overall_results_summary=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+overall_results_summary[which.max(overall_results_summary$avg_acc),]
+ggplot(final_results,aes(x=paste0(approach,'+',k),y=acc))+geom_boxplot()+coord_flip()
+```
+Best result is from k=1, euc dist 3 value which is 0.834. It is from piecewise approximation aproach method.
+
+
+## 4th Dataset Fish
+
+## Data Manipulation
+
+We read our data with fread function. We do some data manipulation to understand the data easier.
+
+```{r}
+
+fish_train=fread("D:/Boğaziçi/İe48b/Univariate_arff/Fish/Fish_TRAIN.txt")
+fish_test=fread("D:/Boğaziçi/İe48b/Univariate_arff/Fish/Fish_TEST.txt")
+head(fish_train,10)
+head(fish_test,10)
+
+setnames(fish_train,"V1","class")
+fish_train=fish_train[order(class)]
+fish_train[,class:=as.character(class)]
+fish_train[,id:=1:.N]
+long_fish_train=melt(fish_train,id.vars=c('id','class'))
+long_fish_train[,time:=as.numeric(gsub("\\D", "", variable))]
+long_fish_train=long_fish_train[,list(id,class,time,value)]
+long_fish_train=long_fish_train[order(id,time)]
+head(long_fish_train,20)
+long_fish_train
+```
+
+## Visualization
+
+We use some plots to see our data and have some idea about the patterns. 
+
+```{r}
+plot(x=long_fish_train[id==1 & class==1]$time,y=long_fish_train[id==1 &  class==1]$value)
+plot(x=long_fish_train[id==2 & class==1]$time,y=long_fish_train[id==2 &  class==1]$value)
+plot(x=long_fish_train[id==3 & class==1]$time,y=long_fish_train[id==3 &  class==1]$value)
+```
+
+## Fused Lasso Approach
+
+We will use fused lasso approach for one of our classification methods. 
+
+```{r}
+train_row_4=nrow(fish_train)
+test_row_4=nrow(fish_test)
+f_res=vector("list",train_row_4)
+for(i in 1:train_row_4){
+      dt_4=long_fish_train[id==i]
+      dt_4=as.matrix(dt_4[,4],rownames=FALSE)
+      f_lasso=trendfilter(dt_4, ord=0)
+      cv=cv.trendfilter(f_lasso)
+      f_res[[i]]=predict.genlasso(f_lasso,cv$lambda.min)
+}
+fused_lasso_dt=vector('list',train_row_4)
+for(i in seq(1:train_row_4)){
+      fused_lasso_dt[[i]]=as.data.table(t(f_res[[i]]$fit))
+}
+lasso_fit=rbindlist(fused_lasso_dt)
+head(lasso_fit,20)
+
+```
+
+
+## Piecewise Approximation Approach
+
+We will use piecewise approximation approach for one of our classification methods. 
+
+```{r}
+train_row_4=nrow(fish_train)
+test_row_4=nrow(fish_test)
+seg_len_1=5
+long_trace_train=long_fish_train[order(id,time)]
+paa_res=vector('list',train_row_4)
+for (i in 1:train_row_4){
+      data_ts=long_fish_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_1,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_4)
+for (i in 1:train_row_4) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_5=rbindlist(paa_list) 
+head(paa_seg_5,20)
+
+seg_len_2=10
+long_plane_train=long_fish_train[order(id,time)]
+paa_res=vector('list',train_row_4)
+for (i in 1:train_row_4){
+      data_ts=long_fish_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_2,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_4)
+for (i in 1:train_row_4) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_10=rbindlist(paa_list) 
+head(paa_seg_10,20)
+
+seg_len_3=20
+long_plane_train=long_fish_train[order(id,time)]
+paa_res=vector('list',train_row_4)
+for (i in 1:train_row_4){
+      data_ts=long_fish_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_3,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_4)
+for (i in 1:train_row_4) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_20=rbindlist(paa_list) 
+head(paa_seg_20,20)
+
+
+plot(x=long_fish_train[id==1 & class==1]$time,y=long_fish_train[id==1 & class==1]$paa_seg_5)
+plot(x=long_fish_train[id==2 & class==1]$time,y=long_fish_train[id==2 & class==1]$paa_seg_10)
+plot(x=long_fish_train[id==3 & class==1]$time,y=long_fish_train[id==3 & class==1]$paa_seg_20)
+
+
+```
+
+
+```{r}
+fish_train_raw=data.frame()
+for(i in 1:length(unique(long_fish_train$id))){
+    fish_train_raw=rbind(fish_train_raw,t(as.data.frame(long_fish_train[id==i]$value)))
+}
+row.names(fish_train_raw)=NULL
+```
+
+## Raw time series distances
+
+```{r}
+
+dataset='Fish'
+main_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Trace/ClassificationData')
+dist_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Trace/ClassificationData/distances')
+large_number=10000
+
+dist_euc_1=as.matrix(dist(fish_train_raw))
+diag(dist_euc_1)=large_number
+fwrite(dist_euc_1,sprintf('%s/_euc_dist_1.csv',dist_path),col.names=F)
+
+dist_dtw_1=as.matrix(dtwDist(fish_train_raw))
+diag(dist_dtw_1)=large_number
+fwrite(dist_dtw_1,sprintf('%s/_dtw_raw_dist_1.csv',dist_path),col.names=F)
+
+dist_lcss_1=TSDatabaseDistances(fish_train_raw,distance='lcss',epsilon=0.05)
+dist_lcss_1=as.matrix(dist_lcss_1)
+diag(dist_lcss_1)=large_number
+fwrite(dist_lcss_1,sprintf('%s/_lcss_dist_1.csv',dist_path),col.names=F)  
+
+dist_erp_1=TSDatabaseDistances(fish_train_raw,distance='erp',g=0.5)
+dist_erp_1=as.matrix(dist_erp_1)
+diag(dist_erp_1)=large_number
+fwrite(dist_erp_1,sprintf('%s/_erp_dist_1.csv', dist_path),col.names=F)
+
+
+
+```
+
+## Fused Lasso Distances
+
+
+```{r}
+
+dist_euc_lasso=as.matrix(dist(lasso_fit))
+diag(dist_euc_lasso)=large_number
+fwrite(dist_euc_lasso,sprintf('%s_euc_lasso_dist.csv',dist_path),col.names=F)
+
+dist_dtw_2=as.matrix(dtwDist(lasso_fit))
+diag(dist_dtw_2)=large_number
+fwrite(dist_dtw_2,sprintf('%s/_dtw_raw_dist_2.csv',dist_path),col.names=F)
+
+dist_lcss_2=TSDatabaseDistances(lasso_fit,distance='lcss',epsilon=0.07)
+dist_lcss_2=as.matrix(dist_lcss_2)
+diag(dist_lcss_2)=large_number
+fwrite(dist_lcss_2,sprintf('%s/_lcss_dist_2.csv',dist_path),col.names=F)  
+
+dist_erp_2=TSDatabaseDistances(lasso_fit,distance='erp',g=0.7)
+dist_erp_2=as.matrix(dist_erp_2)
+diag(dist_erp_2)=large_number
+fwrite(dist_erp_2,sprintf('%s/_erp_dist_2.csv', dist_path),col.names=F)
+
+```
+
+
+## Piecewise Approximation Approach distances
+
+```{r}
+
+dist_euc_paa=as.matrix(dist(paa_seg_5))
+diag(dist_euc_paa)=large_number
+fwrite(dist_euc_paa,sprintf('%s/_euc_raw_paa_segment_5_dist.csv',dist_path),col.names=F)
+
+dist_euc_3=as.matrix(dist(paa_seg_5))
+diag(dist_euc_3)=large_number
+fwrite(dist_euc_3,sprintf('%s/_euc_dist_3.csv',dist_path),col.names=F)
+
+dist_dtw_3=as.matrix(dtwDist(paa_seg_5))
+diag(dist_dtw_3)=large_number
+fwrite(dist_dtw_3,sprintf('%s/_dtw_raw_dist_3.csv',dist_path),col.names=F)
+
+dist_lcss_3=TSDatabaseDistances(paa_seg_5,distance='lcss',epsilon=0.09)
+dist_lcss_3=as.matrix(dist_lcss_3)
+diag(dist_lcss_3)=large_number
+fwrite(dist_lcss_3,sprintf('%s/_lcss_dist_3.csv',dist_path),col.names=F)  
+
+dist_erp_3=TSDatabaseDistances(paa_seg_5,distance='erp',g=0.9)
+dist_erp_3=as.matrix(dist_erp_3)
+diag(dist_erp_3)=large_number
+fwrite(dist_erp_3,sprintf('%s/_erp_dist_3.csv', dist_path),col.names=F)
+
+```
+
+
+
+```{r}
+set.seed(213)
+nof_rep=10
+n_fold=10
+trainclass=c()
+for(i in 1:length(unique(long_fish_train$id))){
+    trainclass=c(trainclass,unique(long_fish_train[id==i,class]))
+}
+cv_indices=generateCVRuns(trainclass,ntimes=nof_rep,nfold=n_fold,leaveOneOut=FALSE,stratified=TRUE)
+str(cv_indices)
+
+dist_folder=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/Trace/ClassificationData/distances')
+dist_files=list.files(dist_folder, full.names=T)
+
+```
+
+
+
+
+```{r}
+k_levels=c(1,3,5)
+approach_file=list.files(dist_folder)
+result=vector('list',length(dist_files)*nof_rep*n_fold*length(k_levels))
+iter=1
+for(m in 1:length(dist_files)){ #
+    dist_mat=as.matrix(fread(dist_files[m],header=FALSE))
+    for(i in 1:nof_rep){
+        this_fold=cv_indices[[i]]
+        for(j in 1:n_fold){
+            test_indices=this_fold[[j]]
+            for(k in 1:length(k_levels)){
+                current_k=k_levels[k]
+                current_fold=nn_classify_cv(dist_mat,trainclass,test_indices,k=current_k)
+                accuracy=sum(trainclass[test_indices]==current_fold$prediction$predicted)/length(test_indices)
+                tmp=data.table(approach=approach_file[m],repid=i,foldid=j,
+                               k=current_k,acc=accuracy)
+                result[[iter]]=tmp
+                iter=iter+1
+                
+            }
+            
+        }
+    
+    }   
+    
+}
+```
+
+
+```{r}
+
+final_results=rbindlist(result)
+summarized_results=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+summarized_results[order(-avg_acc)]
+overall_results_summary=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+overall_results_summary[which.max(overall_results_summary$avg_acc),]
+ggplot(final_results,aes(x=paste0(approach,'+',k),y=acc))+geom_boxplot()+coord_flip()
+```
+Best result is from k=5, erp dist 3 value which is 0.568. It is from piecewise aprroximation method.
+
+
+## 5th Dataset ECG200
+
+## Data Manipulation
+
+We read our data with fread function. We do some data manipulation to understand the data easier.
+
+```{r}
+
+ECG200_train=fread("D:/Boğaziçi/İe48b/Univariate_arff/ECG200/ECG200_TRAIN.txt")
+ECG200_test=fread("D:/Boğaziçi/İe48b/Univariate_arff/ECG200/ECG200_TEST.txt")
+head(ECG200_train,10)
+head(ECG200_test,10)
+
+setnames(ECG200_train,"V1","class")
+ECG200_train=ECG200_train[order(class)]
+ECG200_train[,class:=as.character(class)]
+ECG200_train[,id:=1:.N]
+long_ECG200_train=melt(ECG200_train,id.vars=c('id','class'))
+long_ECG200_train[,time:=as.numeric(gsub("\\D", "", variable))]
+long_ECG200_train=long_ECG200_train[,list(id,class,time,value)]
+long_ECG200_train=long_ECG200_train[order(id,time)]
+head(long_ECG200_train,20)
+long_ECG200_train
+```
+
+
+## Fused Lasso Approach
+
+We will use fused lasso approach for one of our classification methods. 
+
+```{r}
+train_row_5=nrow(ECG200_train)
+test_row_5=nrow(ECG200_train)
+f_res=vector("list",train_row_5)
+for(i in 1:train_row_5){
+      dt_5=long_ECG200_train[id==i]
+      dt_5=as.matrix(dt_5[,4],rownames=FALSE)
+      f_lasso=trendfilter(dt_5, ord=0)
+      cv=cv.trendfilter(f_lasso)
+      f_res[[i]]=predict.genlasso(f_lasso,cv$lambda.min)
+}
+fused_lasso_dt=vector('list',train_row_5)
+for(i in seq(1:train_row_5)){
+      fused_lasso_dt[[i]]=as.data.table(t(f_res[[i]]$fit))
+}
+lasso_fit=rbindlist(fused_lasso_dt)
+head(lasso_fit,20)
+
+```
+
+
+## Piecewise Approximation Approach
+
+We will use piecewise approximation approach for one of our classification methods. 
+
+```{r}
+train_row_5=nrow(ECG200_train)
+test_row_5=nrow(ECG200_test)
+seg_len_1=5
+long_ECG200_train=long_ECG200_train[order(id,time)]
+paa_res=vector('list',train_row_5)
+for (i in 1:train_row_5){
+      data_ts=long_ECG200_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_1,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_5)
+for (i in 1:train_row_5) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_5=rbindlist(paa_list) 
+head(paa_seg_5,20)
+
+seg_len_2=10
+long_ECG200_train=long_ECG200_train[order(id,time)]
+paa_res=vector('list',train_row_5)
+for (i in 1:train_row_5){
+      data_ts=long_ECG200_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_2,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_5)
+for (i in 1:train_row_5) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_10=rbindlist(paa_list) 
+head(paa_seg_10,20)
+
+seg_len_3=20
+long_ECG200_train=long_ECG200_train[order(id,time)]
+paa_res=vector('list',train_row_5)
+for (i in 1:train_row_5){
+      data_ts=long_ECG200_train[id==i]$value
+      paa_rep=repr_paa(data_ts,seg_len_3,meanC)
+      paa_res[[i]]=paa_rep 
+}
+paa_list=vector('list', train_row_5)
+for (i in 1:train_row_5) {
+      paa_list[[i]]=as.data.table(t(paa_res[[i]]))
+}
+paa_seg_20=rbindlist(paa_list) 
+head(paa_seg_20,20)
+
+
+
+
+
+```
+
+
+```{r}
+ECG200_train_raw=data.frame()
+for(i in 1:length(unique(long_ECG200_train$id))){
+    plane_train_raw=rbind(ECG200_train_raw,t(as.data.frame(long_ECG200_train[id==i]$value)))
+}
+row.names(ECG200_train_raw)=NULL
+```
+
+## Raw time series distances
+
+```{r}
+
+dataset='ECG200'
+main_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/ECG200/ClassificationData')
+dist_path=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/ECG200/ClassificationData/distances')
+large_number=10000
+
+dist_euc_1=as.matrix(dist(ECG200_test))
+diag(dist_euc_1)=large_number
+fwrite(dist_euc_1,sprintf('%s/_euc_dist_1.csv',dist_path),col.names=F)
+
+dist_dtw_1=as.matrix(dtwDist(ECG200_test))
+diag(dist_dtw_1)=large_number
+fwrite(dist_dtw_1,sprintf('%s/_dtw_raw_dist_1.csv',dist_path),col.names=F)
+
+dist_lcss_1=TSDatabaseDistances(ECG200_test,distance='lcss',epsilon=0.05)
+dist_lcss_1=as.matrix(dist_lcss_1)
+diag(dist_lcss_1)=large_number
+fwrite(dist_lcss_1,sprintf('%s/_lcss_dist_1.csv',dist_path),col.names=F)  
+
+dist_erp_1=TSDatabaseDistances(ECG200_test,distance='erp',g=0.5)
+dist_erp_1=as.matrix(dist_erp_1)
+diag(dist_erp_1)=large_number
+fwrite(dist_erp_1,sprintf('%s/_erp_dist_1.csv', dist_path),col.names=F)
+
+
+
+```
+
+## Fused Lasso Distances
+
+
+```{r}
+
+dist_euc_lasso=as.matrix(dist(lasso_fit))
+diag(dist_euc_lasso)=large_number
+fwrite(dist_euc_lasso,sprintf('%s_euc_lasso_dist.csv',dist_path),col.names=F)
+
+dist_dtw_2=as.matrix(dtwDist(lasso_fit))
+diag(dist_dtw_2)=large_number
+fwrite(dist_dtw_2,sprintf('%s/_dtw_raw_dist_2.csv',dist_path),col.names=F)
+
+dist_lcss_2=TSDatabaseDistances(lasso_fit,distance='lcss',epsilon=0.07)
+dist_lcss_2=as.matrix(dist_lcss_2)
+diag(dist_lcss_2)=large_number
+fwrite(dist_lcss_2,sprintf('%s/_lcss_dist_2.csv',dist_path),col.names=F)  
+
+dist_erp_2=TSDatabaseDistances(lasso_fit,distance='erp',g=0.7)
+dist_erp_2=as.matrix(dist_erp_2)
+diag(dist_erp_2)=large_number
+fwrite(dist_erp_2,sprintf('%s/_erp_dist_2.csv', dist_path),col.names=F)
+
+```
+
+
+## Piecewise Approximation Approach distances
+
+```{r}
+
+dist_euc_paa=as.matrix(dist(paa_seg_5))
+diag(dist_euc_paa)=large_number
+fwrite(dist_euc_paa,sprintf('%s/_euc_raw_paa_segment_5_dist.csv',dist_path),col.names=F)
+
+dist_euc_3=as.matrix(dist(paa_seg_5))
+diag(dist_euc_3)=large_number
+fwrite(dist_euc_3,sprintf('%s/_euc_dist_3.csv',dist_path),col.names=F)
+
+dist_dtw_3=as.matrix(dtwDist(paa_seg_5))
+diag(dist_dtw_3)=large_number
+fwrite(dist_dtw_3,sprintf('%s/_dtw_raw_dist_3.csv',dist_path),col.names=F)
+
+dist_lcss_3=TSDatabaseDistances(paa_seg_5,distance='lcss',epsilon=0.09)
+dist_lcss_3=as.matrix(dist_lcss_3)
+diag(dist_lcss_3)=large_number
+fwrite(dist_lcss_3,sprintf('%s/_lcss_dist_3.csv',dist_path),col.names=F)  
+
+dist_erp_3=TSDatabaseDistances(paa_seg_5,distance='erp',g=0.9)
+dist_erp_3=as.matrix(dist_erp_3)
+diag(dist_erp_3)=large_number
+fwrite(dist_erp_3,sprintf('%s/_erp_dist_3.csv', dist_path),col.names=F)
+
+```
+
+
+
+```{r}
+set.seed(213)
+nof_rep=10
+n_fold=10
+trainclass=c()
+for(i in 1:length(unique(long_ECG200_train$id))){
+    trainclass=c(trainclass,unique(long_ECG200_train[id==i,class]))
+}
+cv_indices=generateCVRuns(trainclass,ntimes=nof_rep,nfold=n_fold,leaveOneOut=FALSE,stratified=TRUE)
+str(cv_indices)
+
+dist_folder=sprintf('D:/Boğaziçi/İe48b/Univariate_arff/ECG200/ClassificationData/distances')
+dist_files=list.files(dist_folder, full.names=T)
+
+```
+
+
+
+
+```{r}
+k_levels=c(1,3,5)
+approach_file=list.files(dist_folder)
+result=vector('list',length(dist_files)*nof_rep*n_fold*length(k_levels))
+iter=1
+for(m in 1:length(dist_files)){ #
+    dist_mat=as.matrix(fread(dist_files[m],header=FALSE))
+    for(i in 1:nof_rep){
+        this_fold=cv_indices[[i]]
+        for(j in 1:n_fold){
+            test_indices=this_fold[[j]]
+            for(k in 1:length(k_levels)){
+                current_k=k_levels[k]
+                current_fold=nn_classify_cv(dist_mat,trainclass,test_indices,k=current_k)
+                accuracy=sum(trainclass[test_indices]==current_fold$prediction$predicted)/length(test_indices)
+                tmp=data.table(approach=approach_file[m],repid=i,foldid=j,
+                               k=current_k,acc=accuracy)
+                result[[iter]]=tmp
+                iter=iter+1
+                
+            }
+            
+        }
+    
+    }   
+    
+}
+```
+
+
+```{r}
+
+final_results=rbindlist(result)
+summarized_results=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+summarized_results[order(-avg_acc)]
+overall_results_summary=final_results[,list(avg_acc=mean(acc),sdev_acc=sd(acc),result_count=.N),by=list(approach,k)]
+overall_results_summary[which.max(overall_results_summary$avg_acc),]
+ggplot(final_results,aes(x=paste0(approach,'+',k),y=acc))+geom_boxplot()+coord_flip()
+```
+Best result is from k=3, erp dist 3 value which is 0.855. It is from piecewise approximation approach method.
+
+
+## Conclusion
+
+5 datasets are inspected. In the first one raw time series distances gave the best accuracy. In the second one raw time series distances gave the best accuracy.In the third one piecewise approximation method distances gave the best accuracy. In the fourth one piecewise approximation method distances gave the best accuracy.In the fifth one piecewise approximation method distances gave the best accuracy. We can say that piecewise approximation method gives better accuracy in calculation. Standard deviation accuracies are approximately 0.1 in all datasets. 
+
+
