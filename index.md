@@ -7,3 +7,7 @@
 ## Homework 2 (22/11/2021) 
 
 [Here](files/Homework-2.html) is my code for Homework 2.
+
+## Homework 3 (13/12/2021) 
+
+[Here](files/Homework-3.html) is my code for Homework 3.
