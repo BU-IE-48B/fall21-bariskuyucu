@@ -11,3 +11,11 @@
 ## Homework 3 (13/12/2021) 
 
 [Here](files/Homework-3.html) is my code for Homework 3.
+
+## Project
+
+[Here](files/project.ipynb) is our project code.
+
+[Here](files/IE48B Group 8 Project Report.pdf) is our project report.
+
+
